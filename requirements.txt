@@ -1,2 +1,7 @@
-tradingview-ta
+fastapi
+uvicorn
+python-telegram-bot
 requests
+tradingview-ta
+yfinance
+pandas
