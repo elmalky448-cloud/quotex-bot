@@ -1,7 +1,8 @@
 fastapi
 uvicorn
 python-telegram-bot
-requests
-tradingview-ta
 yfinance
 pandas
+ta
+lxml
+peewee
