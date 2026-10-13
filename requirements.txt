@@ -1,8 +1,5 @@
+python-telegram-bot==20.7
+yfinance
+ta
 fastapi
 uvicorn
-python-telegram-bot
-yfinance
-pandas
-ta
-lxml
-peewee
