@@ -1,105 +1,91 @@
 import os
-import threading
-import uvicorn
-from fastapi import FastAPI
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-app = FastAPI()
 
-@app.get("/")
-def home():
-    return {"status": "PRO Bot Running"}
-
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🔥 بوت التحليل القوي PRO جاهز!\n\n"
-        "📊 بيحلل بـ 6 طرق:\n"
-        "1️⃣ RSI + Stochastic\n"
-        "2️⃣ EMA 9/21/50\n"
-        "3️⃣ MACD\n"
-        "4️⃣ Bollinger Bands\n"
-        "5️⃣ Price Action\n"
-        "6️⃣ دعم ومقاومة\n\n"
-        "الاوامر:\n"
-        "/signal EURUSD\n"
-        "/signal BTCUSD\n"
-        "/signal GOLD\n"
-        "/pairs"
+        "🔥 بوت Quotex PRO شغال!\n\n"
+        "/signal EURUSD - تحليل قوي\n"
+        "/pairs - الازواج"
     )
 
-async def signal_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def pairs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("EURUSD GBPUSD USDJPY AUDUSD BTCUSD GOLD")
+
+async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❌ مثال: /signal EURUSD")
+        await update.message.reply_text("استخدم: /signal EURUSD")
         return
     pair = context.args[0].upper()
-    await update.message.reply_text(f"🔍 بعمل تحليل عميق لـ {pair}... 10 ثواني")
-
+    await update.message.reply_text(f"🔍 بحلل {pair}...")
     try:
         import yfinance as yf
         import ta
-        import pandas as pd
 
-        symbol_map = {
-            "EURUSD":"EURUSD=X","GBPUSD":"GBPUSD=X","USDJPY":"JPY=X",
-            "AUDUSD":"AUDUSD=X","USDCAD":"USDCAD=X","EURJPY":"EURJPY=X",
-            "BTCUSD":"BTC-USD","GOLD":"GC=F","ETHUSD":"ETH-USD"
-        }
-        yf_symbol = symbol_map.get(pair, f"{pair}=X")
-        data = yf.download(yf_symbol, period="2d", interval="5m", progress=False)
-
-        if len(data) < 100:
-            await update.message.reply_text("❌ بيانات غير كافية")
+        mp = {"EURUSD":"EURUSD=X","GBPUSD":"GBPUSD=X","USDJPY":"JPY=X","AUDUSD":"AUDUSD=X","BTCUSD":"BTC-USD","GOLD":"GC=F"}
+        sym = mp.get(pair, f"{pair}=X")
+        df = yf.download(sym, period="2d", interval="5m", progress=False)
+        if len(df) < 50:
+            await update.message.reply_text("مفيش بيانات كفاية")
             return
 
-        close = data['Close']
-        high = data['High']
-        low = data['Low']
-        price = float(close.iloc[-1])
+        c = df['Close']; h = df['High']; l = df['Low']
+        price = float(c.iloc[-1])
+        rsi = float(ta.momentum.RSIIndicator(c, 14).rsi().iloc[-1])
+        ema9 = float(ta.trend.EMAIndicator(c, 9).ema_indicator().iloc[-1])
+        ema21 = float(ta.trend.EMAIndicator(c, 21).ema_indicator().iloc[-1])
+        ema50 = float(ta.trend.EMAIndicator(c, 50).ema_indicator().iloc[-1])
+        macd_obj = ta.trend.MACD(c)
+        macd = float(macd_obj.macd().iloc[-1])
+        macd_s = float(macd_obj.macd_signal().iloc[-1])
+        stoch = float(ta.momentum.StochasticOscillator(h,l,c).stoch().iloc[-1])
+        bb = ta.volatility.BollingerBands(c)
+        bb_l = float(bb.bollinger_lband().iloc[-1])
+        bb_u = float(bb.bollinger_hband().iloc[-1])
 
-        # 1. RSI
-        rsi = float(ta.momentum.RSIIndicator(close, 14).rsi().iloc[-1])
-        # 2. Stochastic
-        stoch = ta.momentum.StochasticOscillator(high, low, close)
-        stoch_k = float(stoch.stoch().iloc[-1])
-        # 3. EMA
-        ema9 = float(ta.trend.EMAIndicator(close, 9).ema_indicator().iloc[-1])
-        ema21 = float(ta.trend.EMAIndicator(close, 21).ema_indicator().iloc[-1])
-        ema50 = float(ta.trend.EMAIndicator(close, 50).ema_indicator().iloc[-1])
-        # 4. MACD
-        macd_line = ta.trend.MACD(close)
-        macd = float(macd_line.macd().iloc[-1])
-        macd_signal = float(macd_line.macd_signal().iloc[-1])
-        # 5. Bollinger
-        bb = ta.volatility.BollingerBands(close)
-        bb_upper = float(bb.bollinger_hband().iloc[-1])
-        bb_lower = float(bb.bollinger_lband().iloc[-1])
-        # 6. Price Action - اخر شمعتين
-        last_candle = data.iloc[-1]
-        prev_candle = data.iloc[-2]
-        bullish_engulfing = float(last_candle['Close']) > float(last_candle['Open']) and float(prev_candle['Close']) < float(prev_candle['Open'])
+        buy=0; sell=0; rs=[]
+        if rsi<40: buy+=1; rs.append(f"RSI {rsi:.0f} بيع مفرط")
+        if rsi>60: sell+=1; rs.append(f"RSI {rsi:.0f} شراء مفرط")
+        if stoch<25: buy+=1; rs.append(f"Stoch {stoch:.0f} بيع مفرط")
+        if stoch>75: sell+=1; rs.append(f"Stoch {stoch:.0f} شراء مفرط")
+        if ema9>ema21>ema50: buy+=2; rs.append("EMA صاعد قوي")
+        if ema9<ema21<ema50: sell+=2; rs.append("EMA هابط قوي")
+        elif ema9>ema21: buy+=1; rs.append("EMA9>21")
+        elif ema9<ema21: sell+=1; rs.append("EMA9<21")
+        if macd>macd_s: buy+=1; rs.append("MACD صاعد")
+        else: sell+=1; rs.append("MACD هابط")
+        if price < bb_l*1.001: buy+=1; rs.append("عند Bollinger سفلي")
+        if price > bb_u*0.999: sell+=1; rs.append("عند Bollinger علوي")
 
-        # حساب نقاط القوة
-        buy_score = 0
-        sell_score = 0
-        reasons = []
+        if buy>=4 and buy>sell*1.5:
+            sig="CALL قوي ⬆️⬆️"; conf=min(95,65+buy*5)
+        elif sell>=4 and sell>buy*1.5:
+            sig="PUT قوي ⬇️⬇️"; conf=min(95,65+sell*5)
+        elif buy>sell:
+            sig="CALL ⬆️"; conf=60+(buy-sell)*5
+        elif sell>buy:
+            sig="PUT ⬇️"; conf=60+(sell-buy)*5
+        else:
+            sig="انتظار ⏸️"; conf=50
 
-        if rsi < 40: buy_score+=1; reasons.append(f"RSI قليل {rsi:.0f} (تشبع بيع)")
-        if rsi > 60: sell_score+=1; reasons.append(f"RSI عالي {rsi:.0f} (تشبع شراء)")
-        if stoch_k < 25: buy_score+=1; reasons.append(f"Stochastic {stoch_k:.0f} بيع مفرط")
-        if stoch_k > 75: sell_score+=1; reasons.append(f"Stochastic {stoch_k:.0f} شراء مفرط")
-        if ema9 > ema21 > ema50: buy_score+=2; reasons.append("EMA صاعد قوي 9>21>50")
-        if ema9 < ema21 < ema50: sell_score+=2; reasons.append("EMA هابط قوي 9<21<50")
-        elif ema9 > ema21: buy_score+=1; reasons.append("EMA9 فوق EMA21")
-        elif ema9 < ema21: sell_score+=1; reasons.append("EMA9 تحت EMA21")
-        if macd > macd_signal: buy_score+=1; reasons.append("MACD صاعد")
-        else: sell_score+=1; reasons.append("MACD هابط")
-        if price < bb_lower*1.001: buy_score+=1; reasons.append("السعر عند الحد السفلي Bollinger")
-        if price > bb_upper*0.999: sell_score+=1; reasons.append("السعر عند الحد العلوي Bollinger")
-        if bullish_engulfing: buy_score+=1; reasons.append("شمعة ابتلاعية صاعدة")
+        txt = "\n".join([f"• {x}" for x in rs[:5]])
+        await update.message.reply_text(
+            f"📊 {pair}\n💵 {price:.5f}\n📈 {sig}\n💪 {conf}%\n"
+            f"RSI:{rsi:.1f} Stoch:{stoch:.1f}\nEMA {ema9:.5f}/{ema21:.5f}/{ema50:.5f}\n"
+            f"MACD {macd:.4f}\nBB {bb_l:.5f}-{bb_u:.5f}\n\n{txt}\n\n⏰ 3-5 دقايق"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"خطأ: {e}")
 
-        total = buy_score + sell_score
-        if buy_score >= 4 and buy_score > sell_score*1.5:
-            signal = "صعود قوي CALL ⬆️⬆️"
-            conf = min(95
+if __name__ == "__main__":
+    if not BOT_TOKEN:
+        print("NO TOKEN")
+    else:
+        print("Bot starting...")
+        app = ApplicationBuilder().token(BOT_TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("pairs", pairs))
+        app.add_handler(CommandHandler("signal", signal))
+        app.run_polling()
