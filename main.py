@@ -1,32 +1,39 @@
 import os
 import threading
+import uvicorn
 from fastapi import FastAPI
-from telegram.ext import ApplicationBuilder, CommandHandler
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 app = FastAPI()
 
 @app.get("/")
-def root():
-    return {"status": "Bot Running"}
+def home():
+    return {"status": "Bot is running"}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 بوت Quotex شغال تمام يا مالكي! ✅\n\nالبوت بيستنى اشارة قوية وهيبعتلك\n\nجرب /status")
+async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚀 بوت Quotex شغال تمام يا مالكي! ✅\n\nالبوت جاهز ويبعت اشارات\n\nجرب /status")
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📊 البوت شغال وبيفحص السوق...")
 
-def start_bot():
-    if not BOT_TOKEN:
-        print("No BOT_TOKEN found!")
-        return
-    print("Starting Telegram Bot...")
-    app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(CommandHandler("status", status))
-    app_bot.run_polling()
+def run_api():
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
-threading.Thread(target=start_bot, daemon=True).start()
+# شغل الـ API في الخلفية
+threading.Thread(target=run_api, daemon=True).start()
+
+# شغل بوت التليجرام في الخيط الرئيسي (ده الحل)
+if BOT_TOKEN:
+    print(f"✅ Starting Telegram Bot with token...")
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start_cmd))
+    application.add_handler(CommandHandler("status", status_cmd))
+    print("🤖 Bot polling started - waiting for /start")
+    application.run_polling()
+else:
+    print("❌ NO BOT_TOKEN")
+    run_api()
